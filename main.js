@@ -98,7 +98,7 @@ class MVVM {
         this.init(opts);
         observe(this.$data);
         // 编译
-        this.compile();
+        new Compile(this)
     }
 
     init(opts) {
@@ -106,36 +106,62 @@ class MVVM {
         this.$data = opts.data;
         this.observes = [];
     }
+}
 
-    compile() {
-        // 转换视图层的节点
-        this.traverse(this.$el);
+class Compile {
+    constructor(vm) {
+        this.vm = vm;
+        this.node = vm.$el;
+        this.compile();
     }
-
-    traverse(node) {
-        if(node.nodeType === 1) { // 如果为节点,就递归转换
-            node.childNodes.forEach((childNode) => {
-                this.traverse(childNode);
+    compile(){
+        this.traverse(this.node)
+    }
+    traverse(node){
+        if(node.nodeType === 1){
+            this.compileNode(node)   //解析节点上的v-bind 属性
+            node.childNodes.forEach(childNode=>{
+                this.traverse(childNode)
             })
-        } else if(node.nodeType === 3){ //如果是文本
-            this.renderText(node); // 就渲染文字
+        }else if(node.nodeType === 3){ //处理文本
+            this.compileText(node)
+        }
+    }
+    compileText(node){
+        let reg = /{{(.+?)}}/g
+        let match
+        console.log(node)
+        while(match = reg.exec(node.nodeValue)){
+            let raw = match[0]
+            let key = match[1].trim()
+            node.nodeValue = node.nodeValue.replace(raw, this.vm.$data[key])
+            new Observer(this.vm, key, function(val, oldVal){
+                node.nodeValue = node.nodeValue.replace(oldVal, val)
+            })
         }
     }
 
-    renderText(node) {
-        let reg = /{{(.+?)}}/g;
-        let match;
-        while((match = reg.exec(node.nodeValue))) {
-            let raw = match[0];
-            let key = match[1].trim();
-            node.nodeValue = node.nodeValue.replace(raw, this.$data[key]);
-            // 针对每一个key，创建一个观察者
-            new Observer(this, key, function(val, oldVal) {
-                node.nodeValue = node.nodeValue.replace(oldVal, val);
-            })
-        }
+    //处理指令
+    compileNode(node){
+        let attrs = [...node.attributes] //类数组对象转换成数组，也可用其他方法
+        attrs.forEach(attr=>{
+            //attr 是个对象，attr.name 是属性的名字如 v-model， attr.value 是对应的值，如 name
+            if(this.isDirective(attr.name)){
+                let key = attr.value       //attr.value === 'name'
+                node.value = this.vm.$data[key]
+                new Observer(this.vm, key, function(newVal){
+                    node.value = newVal
+                })
+                node.oninput = (e)=>{
+                    this.vm.$data[key] = e.target.value  //因为是箭头函数，所以这里的 this 是 compile 对象
+                }
+            }
+        })
     }
-
+    //判断属性名是否是指令
+    isDirective(attrName){
+        return attrName === 'v-model'
+    }
 }
 
 
